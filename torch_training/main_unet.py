@@ -9,6 +9,7 @@ import os
 import sys
 import glob
 sys.path.append('../')
+sys.path.append('./')
 
 import numpy as np
 import pandas as pd
@@ -47,11 +48,11 @@ test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
 model = get_model(3,2)
 
 #training parameters
-epoch = 50
+epoch = 30
 learning_rate = 1e-3
 loss_fn = torch.nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 7, 9],gamma=0.1,last_epoch=-1)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 15, 20, 25],gamma=0.5,last_epoch=-1)
 
 #training procedure
 for e in range(epoch):
@@ -65,7 +66,7 @@ for e in range(epoch):
         loss.backward()
 
         optimizer.step()
-        train_loss.append(loss.data.item())
+        train_loss.append(loss.data[0])
         
     val_loss = []
     with torch.no_grad():
@@ -74,7 +75,7 @@ for e in range(epoch):
             y_pred = model(image)
     
             loss = loss_fn(y_pred, mask.cuda())
-            val_loss.append(loss.data.item())
+            val_loss.append(loss.data[0])
     
         print("Epoch: %d, Train: %.3f, Val: %.3f" % (e, np.mean(train_loss), np.mean(val_loss)))
     
@@ -155,7 +156,7 @@ for p_mask in list(binary_prediction):
     
 submit = pd.DataFrame([test_file_list, all_masks]).T
 submit.columns = ['id', 'rle_mask']
-submit.to_csv('submissions/unet-initial.csv', index = False)
+submit.to_csv('../submissions/unet-initial.csv', index = False)
 
 
 
