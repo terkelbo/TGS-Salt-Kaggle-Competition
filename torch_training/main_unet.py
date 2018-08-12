@@ -23,6 +23,7 @@ from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
 from torch_models.unet_model import get_model
 
 
+
 #file name constants
 train_path = '../train'
 test_path = '../test'
@@ -40,7 +41,7 @@ test_file_list = glob.glob(os.path.join(test_path, 'images', '*.png'))
 test_file_list = [f.split('/')[-1].split('.')[0] for f in test_file_list]
 
 #define dataset iterators
-dataset = TGSSaltDataset(train_path, file_list_train)
+dataset = TGSSaltDataset(train_path, file_list_train, augmentation = True)
 dataset_val = TGSSaltDataset(train_path, file_list_val)
 test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
 
@@ -48,16 +49,17 @@ test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
 model = get_model(3,2)
 
 #training parameters
-epoch = 30
+epoch = 50
 learning_rate = 1e-3
 loss_fn = torch.nn.BCELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 15, 20, 25],gamma=0.5,last_epoch=-1)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [5, 10, 15, 20, 25, 30, 35, 40, 45],gamma=0.5,last_epoch=-1)
 
 #training procedure
 for e in range(epoch):
     train_loss = []
-    for image, mask in tqdm(data.DataLoader(dataset, batch_size = 30, shuffle = True)):
+    model.train(True)
+    for image, mask in tqdm(data.DataLoader(dataset, batch_size = 30, shuffle = True)):        
         image = image.type(torch.FloatTensor).cuda()
         y_pred = model(image)
         loss = loss_fn(y_pred, mask.cuda())
@@ -66,25 +68,27 @@ for e in range(epoch):
         loss.backward()
 
         optimizer.step()
-        train_loss.append(loss.data[0])
+        train_loss.append(loss.data.item())
         
     val_loss = []
+    model.train(False)
     with torch.no_grad():
         for image, mask in data.DataLoader(dataset_val, batch_size = 50, shuffle = False):
             image = image.cuda()
             y_pred = model(image)
     
             loss = loss_fn(y_pred, mask.cuda())
-            val_loss.append(loss.data[0])
+            val_loss.append(loss.data.item())
     
         print("Epoch: %d, Train: %.3f, Val: %.3f" % (e, np.mean(train_loss), np.mean(val_loss)))
     
     scheduler.step()
 
 #test predictions
+model.train(False)
 all_predictions = []
 with torch.no_grad():
-    for image in tqdm(data.DataLoader(test_dataset, batch_size = 30)):
+    for image in tqdm(data.DataLoader(test_dataset, batch_size = 100)):
         image = image[0].type(torch.FloatTensor).cuda()
         y_pred = model(image).cpu().data.numpy()
         all_predictions.append(y_pred)
@@ -106,7 +110,7 @@ with torch.no_grad():
         image = image.type(torch.FloatTensor).cuda()
         y_pred = model(image).cpu().data.numpy()
         val_predictions.append(y_pred)
-        val_masks.append(mask)
+        val_masks.append(mask.numpy().astype(int))
     
 val_predictions_stacked = np.vstack(val_predictions)[:, 0, :, :]
 val_masks_stacked = np.vstack(val_masks)[:, 0, :, :]

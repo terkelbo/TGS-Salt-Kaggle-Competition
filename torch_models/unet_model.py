@@ -17,11 +17,13 @@ class double_conv(nn.Module):
         super(double_conv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size = (3,3), padding = (1,1)),
-            nn.BatchNorm2d(out_ch),
+            nn.BatchNorm2d(out_ch, eps=1e-05, momentum=0.1, affine=True),
+            #nn.Dropout(0.2),
             nn.ReLU(inplace=True),
             
             nn.Conv2d(out_ch, out_ch, kernel_size = (3,3), padding = (1,1)),
-            nn.BatchNorm2d(out_ch),
+            nn.BatchNorm2d(out_ch, eps=1e-05, momentum=0.1, affine=True),
+            #nn.Dropout(0.2),
             nn.ReLU(inplace=True)
         )
         
@@ -76,24 +78,31 @@ class UNet(nn.Module):
     
         self.max_pool = nn.MaxPool2d(kernel_size = (2,2), stride = (2,2))
 
-        self.sigmoid = nn.Sigmoid()   
+        self.sigmoid = nn.Sigmoid()
+        self.dropout = nn.Dropout(0.25)   
         
     def forward(self, x):
         x1 = self.in_conv(x)
         
         x1 = self.max_pool(x1)
+        x1 = self.dropout(x1)
         x2 = self.double_conv1(x1)
         
         x2 = self.max_pool(x2)
+        x2 = self.dropout(x2)
         x3 = self.double_conv2(x2)
         
         x3 = self.max_pool(x3)
+        x3 = self.dropout(x3)
         x4 = self.double_conv3(x3)
         
         #upsampling
         x = self.up_conv1(x4, x3)
+        x = self.dropout(x)
         x = self.up_conv2(x, x2)
+        x = self.dropout(x)
         x = self.up_conv3(x, x1)
+        x = self.dropout(x)
         
         #out
         x = self.out_conv(x)
@@ -102,7 +111,6 @@ class UNet(nn.Module):
         
 def get_model(n_channels, n_classes):
     model = UNet(n_channels, n_classes)
-    model.train(True)
     if torch.cuda.is_available(): model.cuda()
     return model
     

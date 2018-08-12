@@ -9,6 +9,7 @@ import os
 
 import torch
 from torch.utils import data
+from torchvision import transforms
 
 import numpy as np
 
@@ -63,11 +64,23 @@ def load_image(path, mask = False):
     
     
 class TGSSaltDataset(data.Dataset):
-    def __init__(self, root_path, file_list, is_test = False):
+    def __init__(self, root_path, file_list, is_test = False, augmentation = False):
         self.is_test = is_test
         self.root_path = root_path
         self.file_list = file_list
-    
+        self.augmentation = augmentation
+        
+        #data augmentation
+        self.to_pil = transforms.ToPILImage()
+        self.to_tensor = transforms.ToTensor()
+        self.random_crop = transforms.RandomCrop(size = 128, pad_if_needed=True)
+        self.random_hflip = transforms.RandomHorizontalFlip(p = 0.5)
+        self.random_vflip = transforms.RandomVerticalFlip(p = 0.5)
+        self.random_recrop = transforms.RandomResizedCrop(size = 128)
+        self.random_rot = transforms.RandomRotation(degrees = (0,90))
+        self.random_choice = transforms.RandomChoice([self.random_rot,self.random_hflip,self.random_vflip])       
+        self.random_order = transforms.RandomOrder([self.random_rot,self.random_hflip,self.random_vflip])
+
     def __len__(self):
         return len(self.file_list)
     
@@ -85,8 +98,28 @@ class TGSSaltDataset(data.Dataset):
         
         image = load_image(image_path)
         
+        if not self.is_test:
+            mask = load_image(mask_path, mask = True)
+            #concat for augmentation purposes
+            image = torch.cat([image,mask], dim = 0)
+       
+        if self.augmentation:
+            #to PIL image
+            image = self.to_pil(image)
+            
+            #random choice
+            image = self.random_choice(image)
+            
+            #to tensor
+            image = self.to_tensor(image)
+        
+        #split back to mask and image
+        if not self.is_test:
+            image, mask = image[:-1,:,:], image[-1,:,:]
+            mask = mask.unsqueeze(0)
+        
         if self.is_test:
             return (image,)
         else:
-            mask = load_image(mask_path, mask = True)
             return image, mask
+        
