@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 
-df = pd.read_csv('./submissions/vgg11_unet.csv')
+df = pd.read_csv('./submissions/albunet-submission-pretrained.csv')
 
 def rle_decode(rle_mask):
     '''
@@ -90,8 +90,8 @@ def rle_encode(im):
 for i in tqdm(range(df.shape[0])):
     if str(df.loc[i,'rle_mask'])!=str(np.nan):        
         decoded_mask = rle_decode(df.loc[i,'rle_mask'])        
-        orig_img = imread(test_path+df.loc[i,'id']+'.png')        
+        orig_img = imread('./test/images/'+df.loc[i,'id']+'.png')        
         crf_output = crf(orig_img,decoded_mask)
         df.loc[i,'rle_mask'] = rle_encode(crf_output)
         
-df.to_csv('submissions/crf-correction-vgg11-unet.csv',index=False,header=True)
+df.to_csv('submissions/crf-correction-albunet-submission-pretrained.csv',index=False,header=True)

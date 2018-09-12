@@ -38,21 +38,11 @@ def shape_image(height, width):
 def load_image(path, mask = False):
     """
     Load image from a given path and pad it on the sides, so that eash side is divisible by 32 (newtwork requirement)
-    
-    if pad = True:
-        returns image as numpy.array, tuple with padding in pixels as(x_min_pad, y_min_pad, x_max_pad, y_max_pad)
-    else:
-        returns image as numpy.array
+
     """
     img = cv2.imread(str(path))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) #BGR to RGB
     
-    height, width, _ = img.shape
-
-    # Padding in needed for UNet models because they need image size to be divisible by 32 
-    x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
-    
-    img = cv2.copyMakeBorder(img, y_min_pad, y_max_pad, x_min_pad, x_max_pad, cv2.BORDER_REFLECT_101)
     if mask:
         # Convert mask to 0 and 1 format
         img = img[:, :, 0:1] // 255
@@ -73,13 +63,9 @@ class TGSSaltDataset(data.Dataset):
         #data augmentation
         self.to_pil = transforms.ToPILImage()
         self.to_tensor = transforms.ToTensor()
-        self.random_crop = transforms.RandomCrop(size = 128, pad_if_needed=True)
+        self.resize = transforms.Resize((101,101), interpolation=2)
         self.random_hflip = transforms.RandomHorizontalFlip(p = 0.5)
-        self.random_vflip = transforms.RandomVerticalFlip(p = 0.5)
-        self.random_recrop = transforms.RandomResizedCrop(size = 128)
-        self.random_rot = transforms.RandomRotation(degrees = (0,90))
-        self.random_choice = transforms.RandomChoice([self.random_rot,self.random_hflip,self.random_vflip])       
-        self.random_order = transforms.RandomOrder([self.random_rot,self.random_hflip,self.random_vflip])
+        self.random_crop = transforms.RandomCrop(size = 50)       
 
     def __len__(self):
         return len(self.file_list)
@@ -95,7 +81,6 @@ class TGSSaltDataset(data.Dataset):
         
         mask_folder = os.path.join(self.root_path, "masks")
         mask_path = os.path.join(mask_folder, file_id + ".png")
-        
         image = load_image(image_path)
         
         if not self.is_test:
@@ -107,12 +92,34 @@ class TGSSaltDataset(data.Dataset):
             #to PIL image
             image = self.to_pil(image)
             
-            #random choice
-            image = self.random_choice(image)
+            image = self.random_hflip(image)
+            """
+            if np.random.rand() < 0.5:
+                crop = np.random.randint(80,101)
+                self.random_crop.size = (crop,crop)
+                image = self.random_crop(image)
+                image = self.resize(image) #resize to 101,101 again
+            """
+            if np.random.rand() < 0.5:
+                image = transforms.functional.adjust_brightness(image, np.random.uniform(0.95,1.05))
+            
+            #resize
+            width, height = image.size
+            x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
+            image = transforms.Pad((x_min_pad, y_max_pad, x_max_pad, y_min_pad), padding_mode='reflect')(image)
+            #to tensor
+            image = self.to_tensor(image)
+        else:
+            image = self.to_pil(image)
+            
+            #resize
+            width, height = image.size
+            x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
+            image = transforms.Pad((x_min_pad, y_max_pad, x_max_pad, y_min_pad), padding_mode='reflect')(image)
             
             #to tensor
             image = self.to_tensor(image)
-        
+            
         #split back to mask and image
         if not self.is_test:
             image, mask = image[:-1,:,:], image[-1,:,:]

@@ -19,8 +19,8 @@ from tqdm import tqdm
 import torch
 from torch.utils import data
 
-from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
-from torch_models.unet_model import get_model
+from torch_dataset.dataset_prep import TGSSaltDataset
+from torch_models.unet_model import get_model, shape_image
 
 
 
@@ -100,7 +100,7 @@ height, width = 101, 101
 #calculate padding
 x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
 
-#create padding
+#Center cropping because resizing is done by reflection!!!!!
 all_predictions_stacked = all_predictions_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
 
 val_predictions = []
@@ -115,6 +115,7 @@ with torch.no_grad():
 val_predictions_stacked = np.vstack(val_predictions)[:, 0, :, :]
 val_masks_stacked = np.vstack(val_masks)[:, 0, :, :]
 
+#Center cropping because resizing is done by reflection!!!!!
 val_predictions_stacked = val_predictions_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
 val_masks_stacked = val_masks_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]
 
