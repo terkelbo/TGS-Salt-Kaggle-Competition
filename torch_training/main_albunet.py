@@ -25,14 +25,15 @@ from torch.utils import data
 from torchvision.transforms.functional import hflip, to_pil_image, to_tensor
 
 from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
-from torch_models.albunet import get_model
+from torch_models.albunet_no_drop import get_model
 from metrics.metric_implementations import iou_metric_batch
+from torch_loss.losses import FocalLoss, dice_loss
 
 import cv2
 
 #training constants
-parameter_path = 'CV5_resnet34_weighted_loss'
-submission_name = 'CV5_resnet34_weighted_loss.csv'
+parameter_path = 'CV5_resnet34_weighted_loss_no_drop'
+submission_name = 'CV5_resnet34_weighted_loss_no_drop.csv'
 
 if not os.path.isdir('../torch_parameters/' + parameter_path):
     os.mkdir('../torch_parameters/' + parameter_path)
@@ -83,7 +84,9 @@ for j, idx in enumerate(fold.split(file_list)):
 	#training parameters
 	epoch = 100
 	learning_rate = 1e-3
-	loss_fn = torch.nn.BCELoss()
+	bceloss = torch.nn.BCELoss()
+    diceloss = dice_loss
+    loss_fn = lambda pred, target: 2*dice_loss(pred, target) + bceloss(pred,target)
 	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 	scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [33,66],gamma=0.1,last_epoch=-1)
 
@@ -97,7 +100,7 @@ for j, idx in enumerate(fold.split(file_list)):
 	for e in range(epoch):
 	    train_loss = []
 	    model.train(True)
-	    for image, mask in tqdm(data.DataLoader(dataset, batch_size = 16, shuffle = True)):        
+	    for image, mask in tqdm(data.DataLoader(dataset, batch_size = 64, shuffle = True)):        
 	        image = image.type(torch.FloatTensor).cuda()
 	        y_pred = model(image)
 	        loss = loss_fn(y_pred, mask.cuda())
@@ -113,7 +116,7 @@ for j, idx in enumerate(fold.split(file_list)):
 	    model.train(False)
 	    i += 1 #increment training step
 	    with torch.no_grad():
-	        for image, mask in data.DataLoader(dataset_val, batch_size = 64, shuffle = False):
+	        for image, mask in data.DataLoader(dataset_val, batch_size = 128, shuffle = False):
 	            image = image.cuda()
 	            y_pred = model(image)
 	    
@@ -141,7 +144,7 @@ for j, idx in enumerate(fold.split(file_list)):
 	model.train(False)
 	new_predictions = []
 	with torch.no_grad():
-	    for image in tqdm(data.DataLoader(test_dataset, batch_size = 100)):
+	    for image in tqdm(data.DataLoader(test_dataset, batch_size = 128)):
 	        image = image[0].type(torch.FloatTensor).cuda()
 	        y_pred = model(image).cpu().data.numpy()
 	        new_predictions.append(y_pred)

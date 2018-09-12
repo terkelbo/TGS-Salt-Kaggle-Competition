@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 
-df = pd.read_csv('./submissions/albunet-submission-pretrained.csv')
+df = pd.read_csv('./submissions/CV5_resnet34_weighted_loss_no_drop.csv')
 
 def rle_decode(rle_mask):
     '''
@@ -94,4 +94,4 @@ for i in tqdm(range(df.shape[0])):
         crf_output = crf(orig_img,decoded_mask)
         df.loc[i,'rle_mask'] = rle_encode(crf_output)
         
-df.to_csv('submissions/crf-correction-albunet-submission-pretrained.csv',index=False,header=True)
+df.to_csv('submissions/crf-correction-CV5_resnet34_weighted_loss_no_drop.csv',index=False,header=True)
