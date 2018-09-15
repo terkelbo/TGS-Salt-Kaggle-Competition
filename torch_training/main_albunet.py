@@ -85,13 +85,13 @@ for j, idx in enumerate(fold.split(file_list)):
 	epoch = 100
 	learning_rate = 1e-3
 	bceloss = torch.nn.BCELoss()
-    diceloss = dice_loss
-    loss_fn = lambda pred, target: 2*dice_loss(pred, target) + bceloss(pred,target)
+	diceloss = dice_loss
+	loss_fn = lambda pred, target: 2*dice_loss(pred, target) + bceloss(pred,target)
 	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 	scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [33,66],gamma=0.1,last_epoch=-1)
 
 	#early stopping params
-	patience = 10
+	patience = 20
 	best_loss = 1e15
 	best_iou = 0.0
 	i = 0
@@ -116,7 +116,7 @@ for j, idx in enumerate(fold.split(file_list)):
 	    model.train(False)
 	    i += 1 #increment training step
 	    with torch.no_grad():
-	        for image, mask in data.DataLoader(dataset_val, batch_size = 128, shuffle = False):
+	        for image, mask in data.DataLoader(dataset_val, batch_size = 64, shuffle = False):
 	            image = image.cuda()
 	            y_pred = model(image)
 	    
@@ -130,8 +130,8 @@ for j, idx in enumerate(fold.split(file_list)):
 	        torch.save(model.state_dict(), '../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt') #save
 	        i = 0 #reset 
 	        best_iou = np.mean(val_iou) #reset
-	    #elif i > patience:
-	    #    break
+	    elif i > patience:
+	        break
 	    
 	    scheduler.step()
 
@@ -144,7 +144,7 @@ for j, idx in enumerate(fold.split(file_list)):
 	model.train(False)
 	new_predictions = []
 	with torch.no_grad():
-	    for image in tqdm(data.DataLoader(test_dataset, batch_size = 128)):
+	    for image in tqdm(data.DataLoader(test_dataset, batch_size = 64)):
 	        image = image[0].type(torch.FloatTensor).cuda()
 	        y_pred = model(image).cpu().data.numpy()
 	        new_predictions.append(y_pred)

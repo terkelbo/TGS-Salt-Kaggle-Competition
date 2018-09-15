@@ -75,7 +75,7 @@ class UNetResNet(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.dropout_2d = dropout_2d
-        
+
         if encoder_depth == 34:
             self.encoder = torchvision.models.resnet34(pretrained=pretrained)
             bottom_channel_nr = 512
@@ -140,7 +140,7 @@ class UNetResNet(nn.Module):
         dec1 = self.dec1(dec2)
         dec0 = self.dec0(dec1)
 
-        return self.out_act(self.final(F.dropout2d(dec0, p=self.dropout_2d)))
+        return self.out_act(self.final(dec0))
     
 def get_model(encoder_depth, num_classes, num_filters=32, dropout_2d=0.2,
                  pretrained=False, is_deconv=True):

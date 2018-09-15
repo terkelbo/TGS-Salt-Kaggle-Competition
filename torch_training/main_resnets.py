@@ -30,8 +30,8 @@ from torch_loss.losses import FocalLoss, dice_loss
 import cv2
 
 #training constants
-parameter_path = 'CV5_resnet101_weighted_loss'
-submission_name = 'CV5_resnet101_weighted_loss.csv'
+parameter_path = 'CV5_resnet101_weighted_loss_no_drop'
+submission_name = 'CV5_resnet101_weighted_loss_no_drop.csv'
 
 if not os.path.isdir('../torch_parameters/' + parameter_path):
     os.mkdir('../torch_parameters/' + parameter_path)
@@ -90,7 +90,7 @@ for j, idx in enumerate(fold.split(file_list)):
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [33,66],gamma=0.1,last_epoch=-1)
 
     #early stopping params
-    patience = 10
+    patience = 20
     best_loss = 1e15
     best_iou = 0.0
     i = 0
@@ -129,8 +129,8 @@ for j, idx in enumerate(fold.split(file_list)):
             torch.save(model.state_dict(), '../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt') #save
             i = 0 #reset 
             best_iou = np.mean(val_iou) #reset
-        #elif i > patience:
-        #    break
+        elif i > patience:
+            break
         
         scheduler.step()
 

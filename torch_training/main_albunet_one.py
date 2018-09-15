@@ -30,7 +30,7 @@ from metrics.metric_implementations import iou_metric_batch
 from torch_loss.losses import FocalLoss, dice_loss
 
 import cv2
-
+print('Starting load')
 #training constants
 parameter_path = 'CV5_resnet34_focal_loss_no_drop'
 submission_name = 'CV5_resnet34_focal_loss_no_drop.csv'
@@ -50,7 +50,7 @@ file_list = list(depths_df['id'].values)
 file_list_val = file_list[::10]  #every 10th image into validation
 file_list_train = [f for f in file_list if f not in file_list_val]
 
-#test foæes
+#test files
 test_file_list = glob.glob(os.path.join(test_path, 'images', '*.png'))
 test_file_list = [f.split('/')[-1].split('.')[0] for f in test_file_list]
 
@@ -78,13 +78,14 @@ test_file_list = [f.split('/')[-1].split('\\')[-1][:-4] for f in test_file_list]
 #one fold
 j = 0
 
+print('Starting to get model')
 #define model
 model = get_model(num_classes = 1, num_filters = 32, pretrained = True)
-
+print('Model loaded')
 #training parameters
 epoch = 100
 learning_rate = 1e-3
-loss_fn = FocalLoss(gamma = 2)
+loss_fn = dice_loss
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [33,66],gamma=0.1,last_epoch=-1)
 
@@ -93,12 +94,12 @@ patience = 10
 best_loss = 1e15
 best_iou = 0.0
 i = 0
-
+print('starting training')
 #training procedure
 for e in range(epoch):
     train_loss = []
     model.train(True)
-    for image, mask in tqdm(data.DataLoader(dataset, batch_size = 16, shuffle = True)):        
+    for image, mask in tqdm(data.DataLoader(dataset, batch_size = 64, shuffle = True)):        
         image = image.type(torch.FloatTensor).cuda()
         y_pred = model(image)
         loss = loss_fn(y_pred, mask.cuda())
