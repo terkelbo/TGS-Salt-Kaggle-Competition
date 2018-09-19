@@ -26,15 +26,15 @@ from torch.utils import data
 from torchvision.transforms.functional import hflip, to_pil_image, to_tensor
 
 from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
-from torch_models.albunet_no_drop import get_model
+from torch_models.albunet_no_drop_SE import get_model
 from metrics.metric_implementations import iou_metric_batch
 from torch_loss.losses import FocalLoss, dice_loss
 
 import cv2
 
 #training constants
-parameter_path = 'CV5_resnet34_weighted_loss_no_drop_low_pixels'
-submission_name = 'CV5_resnet34_weighted_loss_no_drop_low_pixels-tta.csv'
+parameter_path = 'CV5_resnet34_weighted_loss_no_drop_low_pixels_seqex'
+submission_name = 'CV5_resnet34_weighted_loss_no_drop_low_pixels_seqex-tta.csv'
 
 if not os.path.isdir('../torch_parameters/' + parameter_path):
     os.mkdir('../torch_parameters/' + parameter_path)

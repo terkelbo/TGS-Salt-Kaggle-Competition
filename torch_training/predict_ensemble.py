@@ -25,7 +25,7 @@ from torch.utils import data
 from torchvision.transforms.functional import hflip, to_pil_image, to_tensor
 
 from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
-from torch_models.albunet import get_model as get_model_34
+from torch_models.albunet_no_drop import get_model as get_model_34
 from torch_models.unet_resnet import get_model as get_model_101
 from metrics.metric_implementations import iou_metric_batch
 

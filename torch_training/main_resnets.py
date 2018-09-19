@@ -46,7 +46,7 @@ file_list = list(depths_df['id'].values)
 
 #remove images from train with only few pixels in mask
 mask_paths = [train_path + '/masks/' + str(file) + '.png' for file in file_list]
-num_pixels = [[mask,(cv2.imread(mask) < 128).sum()] for mask in mask_paths]
+num_pixels = [[mask,(cv2.imread(mask) > 128).sum()] for mask in mask_paths]
 idx = np.argsort(np.array(num_pixels)[:,1].astype(int))
 num_pixels_sorted = np.array(num_pixels)[idx]
 num_pixels_sorted[:20]
@@ -54,7 +54,7 @@ cutoff = 40
 removed_images = [path.split('/')[-1][:-4] for path, nb_pixels in num_pixels_sorted if int(nb_pixels) < cutoff]
 
 #redo file list
-#file_list = [file for file in file_list if file not in removed_images]
+file_list = [file for file in file_list if file not in removed_images]
 
 #test files
 test_file_list = glob.glob(os.path.join(test_path, 'images', '*.png'))
