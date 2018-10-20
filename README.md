@@ -25,3 +25,11 @@ Here the top row are the input images and bottom row are the corresponding mask 
 
 ## Conclusions
 This competition was slightly different than usual segmentation competitions. Here approximately 40 % of the training set (and supposedly the same in the test set) had input images with only background (i.e. no salt). As the Kaggle metric in the competition very heavly penalizes the prediction of salt in a non-salt image I focused on building a model specifically designed for correct prediction of no-salt images while still keeping the segmentation capabilities high. This was obtained by specifically designing an optimization strategy using a multi-loss scheme weighting the gradients from the classification loss and segmentation loss appropriately. 
+
+## References
+[1] [U-Net: Convolutional Networks for Biomedical Image Segmentation](https://arxiv.org/pdf/1505.04597.pdf)
+[2] [Pretrained ConvNets for pytorch: NASNet, ResNeXt, ResNet, InceptionV4, InceptionResnetV2, Xception, DPN, etc.](https://github.com/Cadene/pretrained-models.pytorch)
+[3] [Hypercolumns for Object Segmentation and Fine-grained Localization](https://arxiv.org/pdf/1411.5752.pdf)
+[4] [Concurrent Spatial and Channel Squeeze & Excitation in Fully Convolutional Networks](https://arxiv.org/pdf/1803.02579.pdf)
+[5] [The Lovász-Softmax loss: A tractable surrogate for the optimization of the intersection-over-union measure in neural networks](https://arxiv.org/pdf/1705.08790.pdf)
+[6] [Aleatoric uncertainty estimation with test-time augmentation for medical image segmentation with convolutional neural networks](https://arxiv.org/abs/1807.07356.pdf)
