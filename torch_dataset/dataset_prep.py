@@ -15,6 +15,21 @@ import numpy as np
 
 import cv2
 
+from albumentations import (
+        ShiftScaleRotate,
+        RandomSizedCrop,
+        ElasticTransform,
+        GridDistortion,
+        RandomBrightness,
+        RandomGamma,
+        Blur,
+        GaussNoise,
+        HorizontalFlip,
+        Compose,
+        OneOf, 
+        PadIfNeeded
+)
+
 def shape_image(height, width):
     if height % 32 == 0:
         y_min_pad = 0
@@ -46,27 +61,39 @@ def load_image(path, mask = False):
     if mask:
         # Convert mask to 0 and 1 format
         img = img[:, :, 0:1] // 255
-        return torch.from_numpy(np.transpose(img, (2, 0, 1)).astype('float32'))
+        return img
     else:
         img = img / 255.0
-        return torch.from_numpy(np.transpose(img, (2, 0, 1)).astype('float32'))
+        return img
     
     
     
 class TGSSaltDataset(data.Dataset):
-    def __init__(self, root_path, file_list, is_test = False, augmentation = False):
+    def __init__(self, root_path, file_list, is_test = False, augmentation = False, binary = False, classes = None):
         self.is_test = is_test
         self.root_path = root_path
         self.file_list = file_list
         self.augmentation = augmentation
+        self.binary = binary
+        self.classes = classes
         
         #data augmentation
-        self.to_pil = transforms.ToPILImage()
-        self.to_tensor = transforms.ToTensor()
-        self.resize = transforms.Resize((101,101), interpolation=2)
-        self.random_hflip = transforms.RandomHorizontalFlip(p = 0.5)
-        self.random_crop = transforms.RandomCrop(size = 50)       
-
+        self.shiftscalerotate = ShiftScaleRotate(p = 0.25)
+        self.randomsizecrop = RandomSizedCrop(min_max_height=(50,101), height = 128, width = 128,p=0.25)
+        self.elastic = ElasticTransform(p=0.25, alpha=120, sigma=120 * 0.05, alpha_affine=120 * 0.03)
+        self.griddistortion = GridDistortion(p = 0.25)
+        self.randombrighness = RandomBrightness(p=0.25)
+        self.randomgamma = RandomGamma(p = 0.25)
+        self.brightness = RandomBrightness(p = 0.25)
+        self.blur = Blur(p = 0.25, blur_limit = 5)
+        
+        self.pad = PadIfNeeded(p = 1, min_height = 128, min_width = 128)
+        
+        self.compose = Compose([HorizontalFlip(p=0.5),
+                    OneOf([self.shiftscalerotate, self.randomsizecrop, self.elastic], p = 1), 
+                    OneOf([self.griddistortion, self.randombrighness, self.randomgamma, self.brightness,self.blur], p = 1)], 
+                    p = 0.8)
+        
     def __len__(self):
         return len(self.file_list)
     
@@ -85,48 +112,41 @@ class TGSSaltDataset(data.Dataset):
         
         if not self.is_test:
             mask = load_image(mask_path, mask = True)
-            #concat for augmentation purposes
-            image = torch.cat([image,mask], dim = 0)
-       
+        
         if self.augmentation:
-            #to PIL image
-            image = self.to_pil(image)
-            
-            image = self.random_hflip(image)
-            """
-            if np.random.rand() < 0.5:
-                crop = np.random.randint(80,101)
-                self.random_crop.size = (crop,crop)
-                image = self.random_crop(image)
-                image = self.resize(image) #resize to 101,101 again
-            """
-            if np.random.rand() < 0.5:
-                image = transforms.functional.adjust_brightness(image, np.random.uniform(0.95,1.05))
-            
-            #resize
-            width, height = image.size
-            x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
-            image = transforms.Pad((x_min_pad, y_max_pad, x_max_pad, y_min_pad), padding_mode='reflect')(image)
-            #to tensor
-            image = self.to_tensor(image)
+            image, mask = self.pad(image=image,mask=mask).values()
+            image, mask = self.compose(image=image,mask=mask).values()
+            mask = mask[:,:,np.newaxis]
+            image, mask = ( torch.from_numpy(np.transpose(image, (2, 0, 1)).astype('float32')), 
+                             torch.from_numpy(np.transpose(mask, (2, 0, 1)).astype('float32')) )
         else:
-            image = self.to_pil(image)
-            
-            #resize
-            width, height = image.size
-            x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
-            image = transforms.Pad((x_min_pad, y_max_pad, x_max_pad, y_min_pad), padding_mode='reflect')(image)
-            
-            #to tensor
-            image = self.to_tensor(image)
-            
-        #split back to mask and image
-        if not self.is_test:
-            image, mask = image[:-1,:,:], image[-1,:,:]
-            mask = mask.unsqueeze(0)
+            if not self.is_test:
+                image, mask = self.pad(image=image,mask=mask).values()
+                mask = mask[:,:,np.newaxis]
+                image, mask = (torch.from_numpy(np.transpose(image, (2, 0, 1)).astype('float32')), 
+                               torch.from_numpy(np.transpose(mask, (2, 0, 1)).astype('float32')))
+            else:
+                image = self.pad(image=image)['image']
+                image = torch.from_numpy(np.transpose(image, (2, 0, 1)).astype('float32'))
+        
         
         if self.is_test:
             return (image,)
         else:
-            return image, mask
+            if not self.binary:
+                if self.classes is None:
+                    return image, mask
+                else:
+                    if mask.sum() == 0:
+                        target = torch.Tensor(1).fill_(0)
+                    else:
+                        target = torch.Tensor(1).fill_(1)
+                    return image, mask, self.classes[index], target
+            else:
+                if mask.sum() == 0:
+                    target = torch.Tensor(1).fill_(0)
+                else:
+                    target = torch.Tensor(1).fill_(1)
+                return image, target
+                
         

@@ -1,13 +1,68 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep  1 17:50:21 2018
+Created on Wed Sep 26 17:59:56 2018
 
 @author: terke
 """
 
+
 from torch import nn
 import torch
 from torchvision import models
+from torch.nn import functional as F
+
+class CSE(nn.Module):
+    def __init__(self, in_ch, r):
+        super(CSE, self).__init__()
+
+        self.linear_1 = nn.Linear(in_ch, in_ch//r)
+        self.linear_2 = nn.Linear(in_ch//r, in_ch)
+
+    def forward(self, x): 
+        input_x = x
+
+        x = x.view(*(x.shape[:-2]),-1).mean(-1)
+        x = F.relu(self.linear_1(x), inplace=True)
+        x = self.linear_2(x)
+        x = x.unsqueeze(-1).unsqueeze(-1)
+        x = torch.sigmoid(x)
+
+        x = input_x * x
+
+        return x
+
+
+class SSE(nn.Module):
+    def __init__(self, in_ch):
+        super(SSE, self).__init__()
+
+        self.conv = nn.Conv2d(in_ch, 1, kernel_size=1, stride=1)
+
+    def forward(self, x):
+        input_x = x
+
+        x = self.conv(x)
+        x = torch.sigmoid(x)
+
+        x = input_x * x
+
+        return x
+
+
+class SCSE(nn.Module):
+    def __init__(self, in_ch, r):
+        super(SCSE, self).__init__()
+
+        self.cSE = CSE(in_ch, r)
+        self.sSE = SSE(in_ch)
+
+    def forward(self, x):
+        cSE = self.cSE(x)
+        sSE = self.sSE(x)
+
+        x = cSE + sSE
+
+        return x
 
 def conv3x3(in_, out):
     """ Convolution with padding and kernel size 3"""
@@ -78,7 +133,7 @@ class AlbuNet(nn.Module):
 
         self.pool = nn.MaxPool2d(2, 2)
 
-        self.encoder = models.resnet34(pretrained=pretrained)
+        self.encoder = models.resnet101(pretrained=pretrained)
 
         self.relu = nn.ReLU(inplace=True)
 
@@ -94,17 +149,35 @@ class AlbuNet(nn.Module):
         self.conv4 = self.encoder.layer3
 
         self.conv5 = self.encoder.layer4
+        
+        bottom_channel_nr = 2048
 
-        self.center = DecoderBlockV2(512, num_filters * 8 * 2, num_filters * 8, is_deconv)
-
-        self.dec5 = DecoderBlockV2(512 + num_filters * 8, num_filters * 8 * 2, num_filters * 8, is_deconv)
-        self.dec4 = DecoderBlockV2(256 + num_filters * 8, num_filters * 8 * 2, num_filters * 8, is_deconv)
-        self.dec3 = DecoderBlockV2(128 + num_filters * 8, num_filters * 4 * 2, num_filters * 2, is_deconv)
-        self.dec2 = DecoderBlockV2(64 + num_filters * 2, num_filters * 2 * 2, num_filters * 2 * 2, is_deconv)
+        self.center = DecoderBlockV2(bottom_channel_nr, num_filters * 8 * 2, num_filters * 8, is_deconv)
+        self.dec5 = DecoderBlockV2(bottom_channel_nr + num_filters * 8, num_filters * 8 * 2, num_filters * 8, is_deconv)
+        self.dec4 = DecoderBlockV2(bottom_channel_nr // 2 + num_filters * 8, num_filters * 8 * 2, num_filters * 8,
+                                   is_deconv)
+        self.dec3 = DecoderBlockV2(bottom_channel_nr // 4 + num_filters * 8, num_filters * 4 * 2, num_filters * 2,
+                                   is_deconv)
+        self.dec2 = DecoderBlockV2(bottom_channel_nr // 8 + num_filters * 2, num_filters * 2 * 2, num_filters * 2 * 2,
+                                   is_deconv)
         self.dec1 = DecoderBlockV2(num_filters * 2 * 2, num_filters * 2 * 2, num_filters, is_deconv)
         self.dec0 = ConvRelu(num_filters, num_filters)
         self.final = nn.Conv2d(num_filters, num_classes, kernel_size=1)
         self.drop = nn.Dropout(p=0.5)
+        
+        #SE blocks
+        self.SE1 = SCSE(64, 16)
+        self.SE2 = SCSE(256, 16)
+        self.SE3 = SCSE(512, 16)
+        self.SE4 = SCSE(1024, 16)
+        self.SE5 = SCSE(2048, 16)
+        self.SE6 = SCSE(256, 16)
+        self.SE7 = SCSE(256, 16)
+        self.SE8 = SCSE(64, 16)
+        self.SE9 = SCSE(128, 16)
+        self.SE10 = SCSE(32, 16)
+        self.SE11 = SCSE(32, 16)
+        
         
         if num_classes == 1:
             self.out_act = nn.Sigmoid()
@@ -112,22 +185,33 @@ class AlbuNet(nn.Module):
             self.out_act = nn.Softmax(dim=1)
 
     def forward(self, x):
-        conv1 = self.conv1(x)
-        conv2 = self.conv2(conv1)
-        conv3 = self.conv3(conv2)
-        conv4 = self.conv4(conv3)
-        conv5 = self.conv5(conv4)
+        conv1 = self.SE1(self.conv1(x))
+        conv2 = self.SE2(self.conv2(conv1))
+        conv3 = self.SE3(self.conv3(conv2))
+        conv4 = self.SE4(self.conv4(conv3))
+        conv5 = self.SE5(self.conv5(conv4))
 
         center = self.center(self.pool(conv5))
 
-        dec5 = self.dec5(torch.cat([center, conv5], 1))
-        dec4 = self.dec4(torch.cat([dec5, conv4], 1))
-        dec3 = self.dec3(torch.cat([dec4, conv3], 1))
-        dec2 = self.dec2(torch.cat([dec3, conv2], 1))
-        dec1 = self.dec1(dec2)
-        dec0 = self.dec0(dec1)
+        dec5 = self.SE6(self.dec5(torch.cat([center, conv5], 1)))
+        dec4 = self.SE7(self.dec4(torch.cat([dec5, conv4], 1)))
+        dec3 = self.SE8(self.dec3(torch.cat([dec4, conv3], 1)))
+        dec2 = self.SE9(self.dec2(torch.cat([dec3, conv2], 1)))
+        dec1 = self.SE10(self.dec1(dec2))
+        dec0 = self.SE11(self.dec0(dec1))
 
-        return self.out_act(self.final(dec0))
+        return self.final(dec0)
+    
+    def load_my_state_dict(self, state_dict):
+        own_state = self.state_dict()
+        for name, param in state_dict.items():
+            if name not in own_state:
+                 continue
+            if isinstance(param, nn.Parameter):
+                # backwards compatibility for serialized parameters
+                param = param.data
+            own_state[name].copy_(param)
+            
     
 def get_model(num_classes=1, num_filters=32, pretrained=False, is_deconv=True):
     model = AlbuNet(num_classes, num_filters, pretrained, is_deconv)

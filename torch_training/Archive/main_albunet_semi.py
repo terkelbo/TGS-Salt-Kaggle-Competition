@@ -28,13 +28,13 @@ from torchvision.transforms.functional import hflip, to_pil_image, to_tensor
 from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
 from torch_models.albunet_no_drop import get_model
 from metrics.metric_implementations import iou_metric_batch
-from torch_loss.losses import FocalLoss, dice_loss
+from torch_loss.losses import FocalLoss, dice_loss, lovasz_hinge
 
 import cv2
 
 #training constants
-parameter_path = 'CV5_resnet34_weighted_loss_no_drop_low_pixels'
-submission_name = 'CV5_resnet34_weighted_loss_no_drop_low_pixels-tta.csv'
+parameter_path = 'CV5_resnet34_weighted_loss_no_drop_low_pixels_two_stage'
+submission_name = 'CV5_resnet34_weighted_loss_no_drop_low_pixels_two_stage-tta.csv'
 
 if not os.path.isdir('../torch_parameters/' + parameter_path):
     os.mkdir('../torch_parameters/' + parameter_path)
@@ -86,56 +86,87 @@ for j, idx in enumerate(fold.split(file_list)):
     epoch = 100
     learning_rate = 1e-3
     bceloss = torch.nn.BCELoss()
+    focalloss = FocalLoss(gamma=0.25)
     diceloss = dice_loss
-    loss_fn = lambda pred, target: 2*dice_loss(pred, target) + bceloss(pred,target)
+    #loss_fn = lambda pred, target: focalloss(pred,target)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [33,66],gamma=0.1,last_epoch=-1)
 
     #early stopping params
-    patience = 30
+    patience = 20
     best_loss = 1e15
     best_iou = 0.0
-    i = 0
-
-    #training procedure
-    for e in range(epoch):
-        train_loss = []
-        model.train(True)
-        for image, mask in tqdm(data.DataLoader(dataset, batch_size = 64, shuffle = True)):        
-            image = image.type(torch.FloatTensor).cuda()
-            y_pred = model(image)
-            loss = loss_fn(y_pred, mask.cuda())
-
-            optimizer.zero_grad()
-            loss.backward()
-
-            optimizer.step()
-            train_loss.append(loss.data.item())
-            
-        val_loss = []
-        val_iou = []
-        model.train(False)
-        i += 1 #increment training step
-        with torch.no_grad():
-            for image, mask in data.DataLoader(dataset_val, batch_size = 64, shuffle = False):
-                image = image.cuda()
+    
+    
+    semi_threshold = epoch # = epoch => dont use pseudolabelling 
+    
+    def reverse_sigmoid(pred):
+        return torch.log(pred/(1-pred)) 
+    
+    for opt_round in range(2):
+        i = 0
+        if opt_round == 0:
+            loss_fn = lambda pred, target: 2*dice_loss(pred, target) + bceloss(pred,target)
+        else:
+            loss_fn = lambda pred, target: lovasz_hinge(reverse_sigmoid(pred),target)
+            learning_rate = 1e-4
+            optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+            scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [33,66],gamma=0.1,last_epoch=-1)
+      
+        print('Starting training loop')
+        #training procedure
+        for e in range(epoch):
+            test_loader = iter(data.DataLoader(test_dataset, batch_size = 8, shuffle = True))
+            train_loss = []
+            model.train(True)
+            for image, mask in tqdm(data.DataLoader(dataset, batch_size = 64, shuffle = True)):        
+                image = image.type(torch.FloatTensor).cuda()
                 y_pred = model(image)
-        
                 loss = loss_fn(y_pred, mask.cuda())
-                val_loss.append(loss.data.item())
-                val_iou.append(iou_metric_batch(mask.cpu().numpy(),y_pred.cpu().numpy())) 
+    
+    #            optimizer.zero_grad()
+    #            loss.backward()
                 
-        
-        print("Epoch: %d, Train: %.3f, Val: %.3f, Val IOU: %.3f" % (e, np.mean(train_loss), np.mean(val_loss), np.mean(val_iou)))
-        if np.mean(val_iou) > best_iou:
-            torch.save(model.state_dict(), '../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt') #save
-            i = 0 #reset 
-            best_iou = np.mean(val_iou) #reset
-        elif i > patience:
-            break
-        
-        scheduler.step()
-
+                if e > semi_threshold:
+                    test_images = next(test_loader)[0].type(torch.FloatTensor).cuda()
+                    model.train(False)
+                    with torch.no_grad():  
+                        mask_test = model(test_images)     
+                    model.train(True)
+                    y_pred_test = model(test_images)
+                    loss_test = loss_fn(y_pred_test,mask_test.cuda())
+    
+                optimizer.zero_grad()
+                if e > semi_threshold:
+                    (loss + loss_test).backward()
+                else:
+                    loss.backward()
+                optimizer.step()
+                train_loss.append(loss.data.item())
+                
+            val_loss = []
+            val_iou = []
+            model.train(False)
+            i += 1 #increment training step
+            with torch.no_grad():
+                for image, mask in data.DataLoader(dataset_val, batch_size = 64, shuffle = False):
+                    image = image.cuda()
+                    y_pred = model(image)
+            
+                    loss = loss_fn(y_pred, mask.cuda())
+                    val_loss.append(loss.data.item())
+                    val_iou.append(iou_metric_batch(mask.cpu().numpy(),y_pred.cpu().numpy())) 
+                    
+            
+            print("Epoch: %d, Train: %.3f, Val: %.3f, Val IOU: %.3f" % (e, np.mean(train_loss), np.mean(val_loss), np.mean(val_iou)))
+            if np.mean(val_iou) > best_iou:
+                torch.save(model.state_dict(), '../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt') #save
+                i = 0 #reset 
+                best_iou = np.mean(val_iou) #reset
+            elif i > patience:
+                break
+            
+            scheduler.step()
 
     #load best model
     model = get_model(num_classes = 1, num_filters = 32, pretrained = True)

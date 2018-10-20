@@ -21,22 +21,23 @@ from sklearn.model_selection import KFold
 from tqdm import tqdm
 
 import torch
+from torch import nn
 from torch.utils import data
 from torchvision.transforms.functional import hflip, to_pil_image, to_tensor
 
 from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
-from torch_models.albunet_no_drop import get_model as get_model_34
-from torch_models.unet_resnet import get_model as get_model_101
+from torch_models.resnext101_hyper_gated import get_model as get_model_152
+from torch_models.resnext50_hyper_gated import get_model as get_model_101
 from metrics.metric_implementations import iou_metric_batch
 
 import cv2
 
 #training constants
-parameter_path_list = ['CV5_resnet34_weighted_loss_no_drop','CV5_resnet101_weighted_loss_no_drop']
-submission_name = 'CV5_resnet34-101_weighted_loss_no_drop_tta.csv'
+parameter_path_list = ['CV5_resnext101_weighted_loss_no_drop_low_pixels_two_stage_SE_stratified_on_plateau_adam_hyper_decoder_gated','CV5_resnext50_weighted_loss_no_drop_low_pixels_two_stage_SE_stratified_on_plateau_adam_hyper_decoder_gated']
+submission_name = 'CV5_resnext50-101_weighted_loss_no_drop_low_pixels_two_stage_SE_stratified_on_plateau_adam_hyper_decoder_gated_finetuned_v2-tta.csv'
 
-models = [0,1,2,3,4]
-weights = [0.75,0.25]
+modelss = [[0,1,2,3,4],[0,1,2,3,4]]
+weights = [0.7,0.3]
 
 model_predictions = []
 
@@ -46,25 +47,30 @@ test_file_list = glob.glob(os.path.join(test_path, 'images', '*.png'))
 test_file_list = [f.split('/')[-1].split('\\')[-1][:-4] for f in test_file_list] 
 test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
 
-for parameter_path in parameter_path_list:
+sigmoid = nn.Sigmoid()
+
+for k,parameter_path in enumerate(parameter_path_list):
+    models = modelss[k]
     for j in models:
         #load best model
-        if '34' in parameter_path:
-            model = get_model_34(num_classes = 1, num_filters = 32, pretrained = True)
+        if '101' in parameter_path:
+            model = get_model_152(num_classes = 1, num_filters = 32, pretrained = True)
         else:
-            model = get_model_101(encoder_depth = 101, num_classes = 1, num_filters=32, dropout_2d=0.2, pretrained=True, is_deconv=True)
+            model = get_model_101(num_classes = 1, num_filters = 32, pretrained = True)
         
         model.load_state_dict(torch.load('../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt'))
+
+        model = nn.DataParallel(model)
 
         #test predictions
         model.train(False)
         new_predictions = []
         with torch.no_grad():
-            for image in tqdm(data.DataLoader(test_dataset, batch_size = 100)):
+            for image in tqdm(data.DataLoader(test_dataset, batch_size = 64)):
                 image = image[0].type(torch.FloatTensor).cuda()
                 image_flipped = torch.from_numpy(np.flip(image,axis=3).copy()).cuda()
-                y_pred = model(image).cpu().data.numpy()
-                y_pred_flipped = np.flip(model(image_flipped).cpu().data.numpy(),axis=3)
+                y_pred = sigmoid(model(image)[0]).cpu().data.numpy()
+                y_pred_flipped = np.flip(sigmoid(model(image_flipped)[0]).cpu().data.numpy(),axis=3)
                 new_predictions.append(y_pred/2 + y_pred_flipped/2)
         new_predictions_stacked = np.vstack(new_predictions)[:, 0, :, :]/len(models)
 

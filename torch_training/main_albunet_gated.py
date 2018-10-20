@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Sep 15 15:18:57 2018
+Created on Sat Oct  6 16:03:17 2018
 
 @author: terke
 """
+
 
 import os
 import sys
@@ -24,23 +25,18 @@ from torch import nn
 from torch.utils import data
 
 from torch_dataset.dataset_prep import TGSSaltDataset, shape_image
-from torch_models.resnext101_hyper_gated import get_model
+from torch_models.senet154_hyper_gated import get_model
 from metrics.metric_implementations import iou_metric_batch
 from torch_loss.losses import FocalLoss, dice_loss, lovasz_hinge
 from functions import get_mask_type
+from torch.nn import functional as F
 
 import cv2
 import pickle
 
-#finetuning parameters
-folds_to_finetune = [0,1,2,3,4] 
-all_models = [0,1,2,3,4]
-lrs = [1e-6, 1e-6, 1e-6, 1e-6, 1e-6]
-continuation = [False, False, False, False, False]
-
 #training constants
 parameter_path = 'CV5_resnext101_weighted_loss_no_drop_low_pixels_two_stage_SE_stratified_on_plateau_adam_hyper_decoder_gated'
-submission_name = 'CV5_resnext101_weighted_loss_no_drop_low_pixels_two_stage_SE_stratified_on_plateau_adam_hyper_decoder_gated-tta_finetuned_v2.csv'
+submission_name = 'CV5_resnext101_weighted_loss_no_drop_low_pixels_two_stage_SE_stratified_on_plateau_hyper_decoder_gated-tta.csv'
 
 if not os.path.isdir('../torch_parameters/' + parameter_path):
     os.mkdir('../torch_parameters/' + parameter_path)
@@ -79,11 +75,6 @@ val_loss_save = {}
 val_iou_save = {}
 
 for j, idx in enumerate(fold.split(file_list,mask_class)):
-    print('Finetuning model %i' % j)
-    if j not in folds_to_finetune:
-        print('Model %i should not be tuned, continuing....' % j)
-        continue
-    
     train_loss_save['fold_' + str(j)] = []
     val_loss_save['fold_' + str(j)] = []
     val_iou_save['fold_' + str(j)] = []
@@ -106,17 +97,12 @@ for j, idx in enumerate(fold.split(file_list,mask_class)):
     test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
 
     #define model
-    model = get_model(num_classes = 1, num_filters = 32, pretrained = True)
-    
-    #as this is finetune, then load the latest model
-    if not continuation[j]:
-        model.load_state_dict(torch.load('../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt'))
-    model = nn.DataParallel(model)
+    model = nn.DataParallel(get_model(num_classes = 1, num_filters = 32, pretrained = True))
 
     #training parameters
-    epochs = [20,75]
+    epochs = [20,100]
     #epochs = [1,1]
-    learning_rate = lrs[j]
+    learning_rate = 1e-4
     bceloss = torch.nn.BCELoss()
     focalloss = FocalLoss(gamma=0.25)
     diceloss = dice_loss
@@ -128,24 +114,12 @@ for j, idx in enumerate(fold.split(file_list,mask_class)):
     best_loss = 1e15
     best_iou = 0.0
     
+       
     sigmoid = nn.Sigmoid()
 
-    val_iou = []
-    with torch.no_grad():
-        for image, mask in data.DataLoader(dataset_val, batch_size = 32, shuffle = False):
-            image = image.cuda()
-            y_pred, classification = model(image)
-    
-            val_iou.append(iou_metric_batch(mask.cpu().numpy(),sigmoid(y_pred).cpu().numpy())) 
-    best_iou = np.mean(val_iou)
-    print('Best starting IOU for model %i is %.3f' % (j,best_iou))
-      
     for opt_round in range(2):
         i = 0
         if opt_round == 0:
-            if not continuation[j]:
-                print('Moving on to using Lovasz loss for model %i' % j)
-                continue
             seg_loss = lambda pred, target: diceloss(sigmoid(pred),target) + 0.2*bceloss(sigmoid(pred),target)
             class_loss = lambda pred, target: 0.1*bceloss(pred,target)
         else:
@@ -156,12 +130,12 @@ for j, idx in enumerate(fold.split(file_list,mask_class)):
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,patience=10,factor=0.5,mode='max')
         
         epoch = epochs[opt_round]
-        print('Training round %i using %i epochs..' % (opt_round,epoch))
+        print('Starting training loop')
         #training procedure
         for e in range(epoch):
             train_loss = []
             model.train(True)
-            for image, mask, mask_class, target in tqdm(data.DataLoader(dataset, batch_size = 12, shuffle = True)):        
+            for image, mask, mask_class, target in tqdm(data.DataLoader(dataset, batch_size = 10, shuffle = True)):        
                 image = image.type(torch.FloatTensor).cuda()
                 y_pred, classification = model(image)
                 
@@ -206,14 +180,11 @@ for j, idx in enumerate(fold.split(file_list,mask_class)):
             val_loss_save['fold_' + str(j)].extend(val_loss)
             val_iou_save['fold_' + str(j)].extend(val_iou)
 
-
-
-#### predict after finetuning then pick up all the models
-for j in all_models:
+    #load best model
     model = get_model(num_classes = 1, num_filters = 32, pretrained = True)
     model.load_state_dict(torch.load('../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt'))
     model = nn.DataParallel(model)
-    
+
     #test predictions
     model.train(False)
     new_predictions = []
@@ -224,10 +195,10 @@ for j in all_models:
             y_pred = sigmoid(model(image)[0]).cpu().data.numpy()
             y_pred_flipped = np.flip(sigmoid(model(image_flipped)[0]).cpu().data.numpy(),axis=3)
             new_predictions.append(y_pred/2 + y_pred_flipped/2)
-    new_predictions_stacked = np.vstack(new_predictions)[:, 0, :, :]/len(all_models)
-    
+    new_predictions_stacked = np.vstack(new_predictions)[:, 0, :, :]/fold.get_n_splits()
+
     if j == 0:
-        all_predictions_stacked = new_predictions_stacked.copy()
+        all_predictions_stacked = new_predictions_stacked
     else:
         all_predictions_stacked = all_predictions_stacked + new_predictions_stacked
 
@@ -239,7 +210,7 @@ x_min_pad, x_max_pad, y_min_pad, y_max_pad = shape_image(height, width)
 
 #Center cropping because resizing is done by reflection!!!!!
 all_predictions_stacked = all_predictions_stacked[:, y_min_pad:128 - y_max_pad, x_min_pad:128 - x_max_pad]    
-        
+    
 threshold = 0.5
 binary_prediction = (all_predictions_stacked > threshold).astype(int)
 
@@ -262,8 +233,6 @@ submit = pd.DataFrame([test_file_list, all_masks]).T
 submit.columns = ['id', 'rle_mask']
 submit.to_csv('../submissions/' + submission_name, index = False)
 
-
 #dump pickle files
-with open('../pkls/' + parameter_path + '_finetune.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
+with open('../pkls/' + parameter_path + '.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
     pickle.dump([train_loss_save, val_loss_save, val_iou_save], f)
-
