@@ -111,22 +111,7 @@ class DecoderBlockV2(nn.Module):
 
 
 class ResNext(nn.Module):
-    """
-        UNet (https://arxiv.org/abs/1505.04597) with Resnet34(https://arxiv.org/abs/1512.03385) encoder
-        Proposed by Alexander Buslaev: https://www.linkedin.com/in/al-buslaev/
-        """
-
-    def __init__(self, num_classes=1, num_filters=32, pretrained=False, is_deconv=True):
-        """
-        :param num_classes:
-        :param num_filters:
-        :param pretrained:
-            False - no pre-trained network is used
-            True  - encoder is pre-trained with resnet34
-        :is_deconv:
-            False: bilinear interpolation is used in decoder
-            True: deconvolution is used in decoder
-        """
+    def __init__(self, num_classes=1, is_deconv=True):
         super(ResNext, self).__init__()
         self.num_classes = num_classes
 
@@ -173,13 +158,7 @@ class ResNext(nn.Module):
         
         self.final = nn.Conv2d(832, num_classes, kernel_size=1)
         self.drop = nn.Dropout(p=0.5)
-        
-        #SE blocks
-        #self.SE1 = SCSE(64, 16)
-        #self.SE2 = SCSE(256, 16)
-        #self.SE3 = SCSE(512, 16)
-        #self.SE4 = SCSE(1024, 16)
-        #self.SE5 = SCSE(2048, 16)
+
         self.SE6 = SCSE(64, 16)
         self.SE7 = SCSE(64, 16)
         self.SE8 = SCSE(64, 16)
@@ -188,10 +167,6 @@ class ResNext(nn.Module):
         self.SE11 = SCSE(64, 16)
         
         
-        if num_classes == 1:
-            self.out_act = nn.Sigmoid()
-        else:
-            self.out_act = nn.Softmax(dim=1)
 
     def forward(self, x):
         conv1 = self.conv1(x) #; print(conv1.size())
@@ -241,15 +216,10 @@ class ResNext(nn.Module):
             own_state[name].copy_(param)
             
     
-def get_model(num_classes=1, num_filters=64, pretrained=False, is_deconv=True):
-    model = ResNext(num_classes, num_filters, pretrained, is_deconv)
+def get_model(num_classes=1, is_deconv=True):
+    model = ResNext(num_classes, is_deconv)
     if torch.cuda.is_available(): 
         model.cuda() 
     else: 
         model.cpu()
     return model
-    
-#model = get_model()
-#A = torch.Tensor(1,3,128,128).fill_(1)
-#with torch.no_grad():
-#    model(A)

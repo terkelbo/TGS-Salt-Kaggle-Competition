@@ -54,9 +54,9 @@ for k,parameter_path in enumerate(parameter_path_list):
     for j in models:
         #load best model
         if '101' in parameter_path:
-            model = get_model_152(num_classes = 1, num_filters = 32, pretrained = True)
+            model = get_model_152(num_classes = 1)
         else:
-            model = get_model_101(num_classes = 1, num_filters = 32, pretrained = True)
+            model = get_model_101(num_classes = 1)
         
         model.load_state_dict(torch.load('../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt'))
 

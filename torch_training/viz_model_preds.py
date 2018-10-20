@@ -77,11 +77,11 @@ dataset = TGSSaltDataset(train_path, file_list_train, augmentation = True, class
 dataset_val = TGSSaltDataset(train_path, file_list_val)
 
 #define resnext50
-model_50 = get_model_50(num_classes = 1, num_filters = 32, pretrained = True)
+model_50 = get_model_50(num_classes = 1)
 model_50.load_state_dict(torch.load('../torch_parameters/' + parameter_path_50 + '/model-' + str(fold_to_test) + '.pt'))
 
 #define resnext101
-model_101 = get_model_101(num_classes = 1, num_filters = 32, pretrained = True)
+model_101 = get_model_101(num_classes = 1)
 model_101.load_state_dict(torch.load('../torch_parameters/' + parameter_path_101 + '/model-' + str(fold_to_test) + '.pt'))
 
 sigmoid = nn.Sigmoid()

@@ -97,7 +97,7 @@ for j, idx in enumerate(fold.split(file_list,mask_class)):
     test_dataset = TGSSaltDataset(test_path, test_file_list, is_test = True)
 
     #define model
-    model = nn.DataParallel(get_model(num_classes = 1, num_filters = 32, pretrained = True))
+    model = nn.DataParallel(get_model(num_classes = 1))
 
     #training parameters
     epochs = [20,100]
@@ -181,7 +181,7 @@ for j, idx in enumerate(fold.split(file_list,mask_class)):
             val_iou_save['fold_' + str(j)].extend(val_iou)
 
     #load best model
-    model = get_model(num_classes = 1, num_filters = 32, pretrained = True)
+    model = get_model(num_classes = 1)
     model.load_state_dict(torch.load('../torch_parameters/' + parameter_path + '/model-' + str(j) + '.pt'))
     model = nn.DataParallel(model)
 
