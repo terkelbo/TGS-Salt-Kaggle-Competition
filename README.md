@@ -17,7 +17,7 @@ By using a five fold validation strategy for each of the two models (ResNext50 +
 | SE-ResNext-101 Encoder | 0.855     | 0.874      |
 | Mean ensemble          | 0.855     | 0.875      |
 
-This gives a placement in the top 4 % on the Private Leaderboard placed 127th of 3291 participants.
+This gives a placement in the top 3.6 % on the Private Leaderboard placed 118th of 3234 participants.
 Utilizing the first fold of both models and ensembling the results on 10 randomly chosen examples from the validation set, the following results are obtained:
 <img src='./collage_fold_0_background.PNG' />
 
